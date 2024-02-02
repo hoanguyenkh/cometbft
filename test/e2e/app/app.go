@@ -35,6 +35,7 @@ const (
 	prefixReservedKey   string = "reservedTxKey_"
 	suffixChainID       string = "ChainID"
 	suffixVoteExtHeight string = "VoteExtensionsHeight"
+	suffixPbtsHeight    string = "PbtsHeight"
 	suffixInitialHeight string = "InitialHeight"
 )
 
@@ -115,6 +116,17 @@ type Config struct {
 
 	// Flag for enabling and disabling logging of ABCI requests.
 	ABCIRequestsLoggingEnabled bool `toml:"abci_requests_logging_enabled"`
+
+	// PbtsEnableHeight configures the first height during which
+	// the chain will start using Proposer-Based Timestamps (PBTS)
+	// to create and validate new blocks.
+	PbtsEnableHeight int64 `toml:"pbts_enable_height"`
+
+	// PbtsUpdateHeight configures the height at which consensus
+	// param PbtsEnableHeight will be set.
+	// -1 denotes it is set at genesis.
+	// 0 denotes it is set at InitChain.
+	PbtsUpdateHeight int64 `toml:"pbts_update_height"`
 }
 
 func DefaultConfig(dir string) *Config {
@@ -163,19 +175,33 @@ func (app *Application) Info(context.Context, *abci.InfoRequest) (*abci.InfoResp
 	}, nil
 }
 
-func (app *Application) updateVoteExtensionEnableHeight(currentHeight int64) *cmtproto.ConsensusParams {
-	var params *cmtproto.ConsensusParams
+func (app *Application) updateEnableHeights(currentHeight int64) *cmtproto.ConsensusParams {
+	params := &cmtproto.ConsensusParams{}
+	retNil := true
 	if app.cfg.VoteExtensionsUpdateHeight == currentHeight {
 		app.logger.Info("enabling vote extensions on the fly",
 			"current_height", currentHeight,
 			"enable_height", app.cfg.VoteExtensionsEnableHeight)
-		params = &cmtproto.ConsensusParams{
-			Abci: &cmtproto.ABCIParams{
-				VoteExtensionsEnableHeight: app.cfg.VoteExtensionsEnableHeight,
-			},
+		params.Abci = &cmtproto.ABCIParams{
+			VoteExtensionsEnableHeight: app.cfg.VoteExtensionsEnableHeight,
 		}
+		retNil = false
 		app.logger.Info("updating VoteExtensionsHeight in app_state", "height", app.cfg.VoteExtensionsEnableHeight)
 		app.state.Set(prefixReservedKey+suffixVoteExtHeight, strconv.FormatInt(app.cfg.VoteExtensionsEnableHeight, 10))
+	}
+	if app.cfg.PbtsUpdateHeight == currentHeight {
+		app.logger.Info("enabling PBTS on the fly",
+			"current_height", currentHeight,
+			"enable_height", app.cfg.PbtsEnableHeight)
+		params.Pbts = &cmtproto.PbtsParams{
+			PbtsEnableHeight: app.cfg.PbtsEnableHeight,
+		}
+		retNil = false
+		app.logger.Info("updating PBTS Height in app_state", "height", app.cfg.PbtsEnableHeight)
+		app.state.Set(prefixReservedKey+suffixPbtsHeight, strconv.FormatInt(app.cfg.PbtsEnableHeight, 10))
+	}
+	if retNil {
+		return nil
 	}
 	return params
 }
@@ -199,6 +225,8 @@ func (app *Application) InitChain(_ context.Context, req *abci.InitChainRequest)
 	app.state.Set(prefixReservedKey+suffixChainID, req.ChainId)
 	app.logger.Info("setting VoteExtensionsHeight in app_state", "height", req.ConsensusParams.Abci.VoteExtensionsEnableHeight)
 	app.state.Set(prefixReservedKey+suffixVoteExtHeight, strconv.FormatInt(req.ConsensusParams.Abci.VoteExtensionsEnableHeight, 10))
+	app.logger.Info("setting PBTS Height in app_state", "height", req.ConsensusParams.Pbts.PbtsEnableHeight)
+	app.state.Set(prefixReservedKey+suffixPbtsHeight, strconv.FormatInt(req.ConsensusParams.Pbts.PbtsEnableHeight, 10))
 	app.logger.Info("setting initial height in app_state", "initial_height", req.InitialHeight)
 	app.state.Set(prefixReservedKey+suffixInitialHeight, strconv.FormatInt(req.InitialHeight, 10))
 	// Get validators from genesis
@@ -211,7 +239,7 @@ func (app *Application) InitChain(_ context.Context, req *abci.InitChainRequest)
 		}
 	}
 
-	params := app.updateVoteExtensionEnableHeight(0)
+	params := app.updateEnableHeights(0)
 
 	resp := &abci.InitChainResponse{
 		ConsensusParams: params,
@@ -285,7 +313,7 @@ func (app *Application) FinalizeBlock(_ context.Context, req *abci.FinalizeBlock
 		panic(err)
 	}
 
-	params := app.updateVoteExtensionEnableHeight(req.Height)
+	params := app.updateEnableHeights(req.Height)
 
 	if app.cfg.FinalizeBlockDelay != 0 {
 		time.Sleep(app.cfg.FinalizeBlockDelay)
