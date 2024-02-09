@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	gogotypes "github.com/cosmos/gogoproto/types"
+
 	"github.com/cometbft/cometbft/abci/example/kvstore"
 	abci "github.com/cometbft/cometbft/abci/types"
 	cryptoproto "github.com/cometbft/cometbft/api/cometbft/crypto/v1"
@@ -193,8 +195,8 @@ func (app *Application) updateEnableHeights(currentHeight int64) *cmtproto.Conse
 		app.logger.Info("enabling PBTS on the fly",
 			"current_height", currentHeight,
 			"enable_height", app.cfg.PbtsEnableHeight)
-		params.Pbts = &cmtproto.PbtsParams{
-			PbtsEnableHeight: app.cfg.PbtsEnableHeight,
+		params.Feature = &cmtproto.FeatureParams{
+			PbtsEnableHeight: &gogotypes.Int64Value{Value: app.cfg.PbtsEnableHeight},
 		}
 		retNil = false
 		app.logger.Info("updating PBTS Height in app_state", "height", app.cfg.PbtsEnableHeight)
@@ -225,8 +227,8 @@ func (app *Application) InitChain(_ context.Context, req *abci.InitChainRequest)
 	app.state.Set(prefixReservedKey+suffixChainID, req.ChainId)
 	app.logger.Info("setting VoteExtensionsHeight in app_state", "height", req.ConsensusParams.Abci.VoteExtensionsEnableHeight)
 	app.state.Set(prefixReservedKey+suffixVoteExtHeight, strconv.FormatInt(req.ConsensusParams.Abci.VoteExtensionsEnableHeight, 10))
-	app.logger.Info("setting PBTS Height in app_state", "height", req.ConsensusParams.Pbts.PbtsEnableHeight)
-	app.state.Set(prefixReservedKey+suffixPbtsHeight, strconv.FormatInt(req.ConsensusParams.Pbts.PbtsEnableHeight, 10))
+	app.logger.Info("setting PBTS Height in app_state", "height", req.ConsensusParams.Feature.PbtsEnableHeight.GetValue())
+	app.state.Set(prefixReservedKey+suffixPbtsHeight, strconv.FormatInt(req.ConsensusParams.Feature.PbtsEnableHeight.GetValue(), 10))
 	app.logger.Info("setting initial height in app_state", "initial_height", req.InitialHeight)
 	app.state.Set(prefixReservedKey+suffixInitialHeight, strconv.FormatInt(req.InitialHeight, 10))
 	// Get validators from genesis

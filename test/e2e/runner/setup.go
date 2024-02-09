@@ -142,7 +142,8 @@ func MakeGenesis(testnet *e2e.Testnet) (types.GenesisDoc, error) {
 		genesis.ConsensusParams.ABCI.VoteExtensionsEnableHeight = testnet.VoteExtensionsEnableHeight
 	}
 	if testnet.PbtsUpdateHeight == -1 {
-		genesis.ConsensusParams.Pbts.PbtsEnableHeight = testnet.PbtsEnableHeight
+		pbtsEnableHeight := testnet.PbtsEnableHeight
+		genesis.ConsensusParams.Feature.PbtsEnableHeight = &pbtsEnableHeight
 	}
 	for validator, power := range testnet.Validators {
 		genesis.Validators = append(genesis.Validators, types.GenesisValidator{
